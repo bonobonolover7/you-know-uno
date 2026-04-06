@@ -94,6 +94,7 @@ def init_game():
         p["hand"] = [deck.pop() for _ in range(7)]
 
     while True:
+        if not deck: break
         first = deck.pop()
         if first.color != "Wild" and first.value.isdigit(): break
         deck.insert(0, first)
@@ -104,24 +105,39 @@ def init_game():
         "current_color": first.color, "turn": 0, "direction": 1,
         "stack": 0, "game_msg": "🎮 게임 시작! (F키로 우노를 외치세요!)",
         "uno_timer": None, "uno_target": None, "initialized": True,
-        "waiting_color": False
+        "waiting_color": False, "wild_idx": -1
     })
 
 if 'initialized' not in st.session_state:
     init_game()
 
 # ---------------- 4. 액션 로직 ----------------
+def call_uno(caller_idx):
+    target_idx = st.session_state.get('uno_target')
+    if target_idx is not None:
+        target = st.session_state.players[target_idx]
+        caller = st.session_state.players[caller_idx]
+        if caller_idx == target_idx:
+            target["uno_called"] = True
+            st.session_state.game_msg = f"✨ {caller['name']}: 'UNO!!!' (방어 성공!)"
+        else:
+            if st.session_state.deck:
+                target["hand"].append(st.session_state.deck.pop())
+            st.session_state.game_msg = f"🔔 {caller['name']}님이 먼저 외쳤습니다! {target['name']}님 1장 추가!"
+        st.session_state.uno_target = None
+        st.session_state.uno_timer = None
+    else:
+        st.toast("지금은 우노 상황이 아닙니다!")
+
 def play_action(p_idx, c_idx, chosen_color=None):
     p = st.session_state.players[p_idx]
     card = p["hand"].pop(c_idx)
     st.session_state.discard.append(card)
     st.session_state.current_color = chosen_color if card.color == "Wild" else card.color
 
-    # 우노 타겟 설정
     if len(p["hand"]) == 1:
         st.session_state.uno_target = p_idx
-        # 사람 반응속도 고려 (0.25~0.7초 랜덤)
-        st.session_state.uno_timer = time.time() + random.uniform(0.25, 0.7)
+        st.session_state.uno_timer = time.time() + random.uniform(0.3, 0.7)
     
     msg = f"📢 {p['name']}님이 {card.value} 카드를 냈습니다."
     if card.value == "Draw Two": st.session_state.stack += 2
@@ -132,41 +148,24 @@ def play_action(p_idx, c_idx, chosen_color=None):
     st.session_state.game_msg = msg
     next_p()
 
-def call_uno(caller_idx):
-    target_idx = st.session_state.uno_target
-    if target_idx is not None:
-        target = st.session_state.players[target_idx]
-        caller = st.session_state.players[caller_idx]
-        if caller_idx == target_idx:
-            target["uno_called"] = True
-            st.session_state.game_msg = f"✨ {caller['name']}: 'UNO!!!' (방어 성공!)"
-        else:
-            target["hand"].append(st.session_state.deck.pop())
-            st.session_state.game_msg = f"🔔 {caller['name']}님이 먼저 외쳤습니다! {target['name']}님 1장 추가!"
-        st.session_state.uno_target = None
-        st.session_state.uno_timer = None
-    else:
-        # 잘못 눌렀을 때 페널티 (선택사항)
-        st.toast("지금은 우노가 아닙니다!")
-
 def handle_penalty(p_idx):
     p = st.session_state.players[p_idx]
-    for _ in range(st.session_state.get('stack', 0)):
+    s = st.session_state.get('stack', 0)
+    for _ in range(s):
         if st.session_state.deck: p["hand"].append(st.session_state.deck.pop())
     st.session_state.stack = 0
     next_p()
 
 # ---------------- 5. UI 렌더링 ----------------
 st.markdown("<h1 style='text-align: center;'>UNO: SPEED BATTLE</h1>", unsafe_allow_html=True)
-st.markdown(f"""<div class="game-log">{st.session_state.game_msg}</div>""", unsafe_allow_html=True)
+st.markdown(f"""<div class="game-log">{st.session_state.get('game_msg', '')}</div>""", unsafe_allow_html=True)
 
-# (1) 봇 정보 - 방어 코드 추가 (get 사용)
+# (1) 봇 정보
 bot_cols = st.columns(3)
 for i in range(1, 4):
     p = st.session_state.players[i]
     with bot_cols[i-1]:
         border = "3px solid red" if st.session_state.turn == i else "1px solid #ddd"
-        # 에러 방지: uno_called가 없으면 False로 간주
         is_uno_called = p.get("uno_called", False)
         uno_badge = "❗UNO" if len(p["hand"]) == 1 and not is_uno_called else ""
         st.markdown(f"""<div class="bot-box" style="border: {border}"><b>{p['name']}</b><br>{len(p['hand'])} cards <span style='color:red'>{uno_badge}</span></div>""", unsafe_allow_html=True)
@@ -178,22 +177,23 @@ _, center_col, _ = st.columns([1, 0.5, 1])
 with center_col:
     st.markdown(f"<center><b>COLOR: {st.session_state.current_color}</b></center>", unsafe_allow_html=True)
     st.markdown(render_card_html(st.session_state.discard[-1]), unsafe_allow_html=True)
-    if st.session_state.get('stack', 0) > 0:
-        st.error(f"STACK +{st.session_state.stack}")
+    s_val = st.session_state.get('stack', 0)
+    if s_val > 0: st.error(f"STACK +{s_val}")
     
     st.write("")
     if st.button("📢 UNO (F)", type="primary"):
         call_uno(0)
         st.rerun()
 
-# (3) 봇 우노 타이머 체크
-if st.session_state.uno_timer and time.time() > st.session_state.uno_timer:
+# 봇 우노 타이머 체크 (AttributeError 방지 로직)
+u_timer = st.session_state.get('uno_timer')
+if u_timer and time.time() > u_timer:
     call_uno(random.choice([1, 2, 3]))
     st.rerun()
 
 st.divider()
 
-# (4) 플레이어 핸드
+# (3) 플레이어/봇 턴 처리
 curr_p = st.session_state.players[st.session_state.turn]
 
 if st.session_state.get('waiting_color'):
@@ -207,9 +207,9 @@ if st.session_state.get('waiting_color'):
 
 elif not curr_p["bot"]:
     st.write("### 🎴 YOUR HAND")
-    playable = []
     top = st.session_state.discard[-1]
     s = st.session_state.get('stack', 0)
+    playable = []
     for i, c in enumerate(curr_p["hand"]):
         if s > 0:
             if c.value == top.value: playable.append(i)
@@ -229,12 +229,12 @@ elif not curr_p["bot"]:
         if st.button("DRAW", use_container_width=True):
             if s > 0: handle_penalty(0)
             else:
-                st.session_state.players[0]["hand"].append(st.session_state.deck.pop())
+                if st.session_state.deck:
+                    st.session_state.players[0]["hand"].append(st.session_state.deck.pop())
                 st.session_state.game_msg = "🃏 카드 1장을 뽑았습니다."
                 next_p()
             st.rerun()
 else:
-    # 봇 AI 턴
     st.info(f"🤖 {curr_p['name']}가 생각 중...")
     time.sleep(1.2)
     top = st.session_state.discard[-1]
@@ -250,7 +250,8 @@ else:
     else:
         if s > 0: handle_penalty(st.session_state.turn)
         else:
-            curr_p["hand"].append(st.session_state.deck.pop())
+            if st.session_state.deck:
+                curr_p["hand"].append(st.session_state.deck.pop())
             st.session_state.game_msg = f"🃏 {curr_p['name']}님이 카드를 뽑았습니다."
             next_p()
     st.rerun()
