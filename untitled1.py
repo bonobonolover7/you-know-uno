@@ -2,7 +2,7 @@ import streamlit as st
 import random
 import time
 
-st.set_page_config(layout="wide", page_title="UNO: Speed Battle")
+st.set_page_config(layout="wide", page_title="우노 스피드 배틀")
 
 # ---------------- 1. 스타일 & 단축키 (F키) ----------------
 st.markdown("""
@@ -12,17 +12,19 @@ st.markdown("""
         width: 100px; height: 150px; border-radius: 12px;
         display: flex; flex-direction: column; justify-content: center; align-items: center;
         color: white; font-weight: bold; box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-        border: 3px solid white; text-align: center; margin: auto;
+        border: 3px solid white; text-align: center; margin: auto; transition: transform 0.2s;
     }
+    .card-ui:hover { transform: scale(1.05); }
     .card-value { font-size: 24px; }
     .card-type { font-size: 10px; opacity: 0.9; margin-bottom: 5px; }
     
-    /* 카드 가져오기 버튼 스타일 */
-    div.stButton > button[kind="secondary"] {
-        width: 100%; height: 50px; font-weight: bold; background-color: #f0f2f6;
+    /* 색상 선택용 미니 카드 */
+    .color-selector-card {
+        width: 80px; height: 120px; border-radius: 10px;
+        border: 4px solid white; box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+        cursor: pointer; margin: auto;
     }
-    
-    /* 우노 버튼 스타일 (빨간색) */
+
     div.stButton > button[kind="primary"] {
         background-color: #FF0000 !important; color: white !important;
         width: 100%; height: 70px; border-radius: 15px; font-size: 22px !important;
@@ -32,15 +34,12 @@ st.markdown("""
     
     .game-log {
         background-color: #ffffff; padding: 15px; border-radius: 10px;
-        border-left: 5px solid #FF4B4B; margin-bottom: 20px;
-        font-size: 18px; font-weight: bold; text-align: center;
+        border-left: 10px solid #FF4B4B; margin-bottom: 20px;
+        font-size: 20px; font-weight: bold; text-align: center;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
     }
-    .bot-box {
-        background: white; padding: 10px; border-radius: 12px;
-        border: 1px solid #ddd; text-align: center; min-width: 120px;
-    }
-    .wild-bg {
-        background: linear-gradient(45deg, #FF4B4B 25%, #F4C542 25%, #F4C542 50%, #4CAF50 50%, #4CAF50 75%, #2196F3 75%);
+    .turn-indicator {
+        color: #FF4B4B; font-size: 24px; margin-bottom: 10px;
     }
 </style>
 
@@ -111,7 +110,7 @@ def init_game():
     st.session_state.update({
         "deck": deck, "players": players, "discard": [first],
         "current_color": first.color, "turn": 0, "direction": 1,
-        "stack": 0, "game_msg": "🎮 게임 시작! 낼 카드가 없으면 자동으로 카드를 가져옵니다.",
+        "stack": 0, "game_msg": "🎮 우노 배틀 시작! 당신의 차례입니다.",
         "uno_timer": None, "uno_target": None, "initialized": True,
         "waiting_color": False, "wild_idx": -1
     })
@@ -131,7 +130,7 @@ def call_uno(caller_idx):
         else:
             if st.session_state.deck:
                 target["hand"].append(st.session_state.deck.pop())
-            st.session_state.game_msg = f"🔔 {caller['name']}님이 먼저 외쳤습니다! {target['name']}님은 벌칙 카드 1장!"
+            st.session_state.game_msg = f"🔔 {caller['name']}님이 먼저 외쳤습니다! {target['name']}님 1장 추가!"
         st.session_state.uno_target = None
         st.session_state.uno_timer = None
 
@@ -143,51 +142,50 @@ def play_action(p_idx, c_idx, chosen_color=None):
 
     if len(p["hand"]) == 1:
         st.session_state.uno_target = p_idx
-        st.session_state.uno_timer = time.time() + random.uniform(0.35, 0.75)
+        st.session_state.uno_timer = time.time() + random.uniform(0.3, 0.7)
     
     msg = f"📢 {p['name']}님이 {card.value} 카드를 냈습니다."
     if card.value == "Draw Two": st.session_state.stack += 2
     elif card.value == "Wild Draw Four": st.session_state.stack += 4
-    if card.value == "Skip": next_p()
-    elif card.value == "Reverse": st.session_state.direction *= -1
+    if card.value == "Skip": next_p(); msg += " (다음 차례 건너뜀)"
+    elif card.value == "Reverse": st.session_state.direction *= -1; msg += " (방향 전환)"
     
     st.session_state.game_msg = msg
     next_p()
 
-def handle_penalty(p_idx):
-    p = st.session_state.players[p_idx]
-    s = st.session_state.get('stack', 0)
-    for _ in range(s):
-        if st.session_state.deck: p["hand"].append(st.session_state.deck.pop())
-    st.session_state.stack = 0
-    st.session_state.game_msg = f"⚠️ {p['name']}님이 누적된 공격 카드를 모두 받았습니다!"
-    next_p()
-
 # ---------------- 5. UI 렌더링 ----------------
+curr_p = st.session_state.players[st.session_state.turn]
+
 st.markdown("<h1 style='text-align: center;'>우노 스피드 배틀</h1>", unsafe_allow_html=True)
-st.markdown(f"""<div class="game-log">{st.session_state.get('game_msg', '')}</div>""", unsafe_allow_html=True)
+
+# 누구의 턴인지 강조 표시
+turn_name = "🔥 당신의 차례입니다!" if not curr_p["bot"] else f"🤖 {curr_p['name']}의 차례입니다..."
+st.markdown(f"<div class='game-log'>{st.session_state.get('game_msg', '')}<br><span class='turn-indicator'>{turn_name}</span></div>", unsafe_allow_html=True)
 
 # (1) 봇 정보
 bot_cols = st.columns(3)
 for i in range(1, 4):
     p = st.session_state.players[i]
     with bot_cols[i-1]:
-        border = "3px solid red" if st.session_state.turn == i else "1px solid #ddd"
+        is_turn = (st.session_state.turn == i)
+        bg_color = "#FFE4E1" if is_turn else "white"
+        border = "4px solid #FF4B4B" if is_turn else "1px solid #ddd"
         is_uno_called = p.get("uno_called", False)
         uno_badge = "❗우노" if len(p["hand"]) == 1 and not is_uno_called else ""
-        st.markdown(f"""<div class="bot-box" style="border: {border}"><b>{p['name']}</b><br>보유 카드: {len(p['hand'])}장 <span style='color:red'>{uno_badge}</span></div>""", unsafe_allow_html=True)
+        st.markdown(f"""<div class="bot-box" style="border: {border}; background-color: {bg_color}">
+                        <b>{p['name']}</b><br>카드: {len(p['hand'])}장 <span style='color:red'>{uno_badge}</span></div>""", unsafe_allow_html=True)
 
 st.divider()
 
 # (2) 중앙 영역 (바닥 카드)
 _, center_col, _ = st.columns([1, 0.5, 1])
 with center_col:
-    st.markdown(f"<center><b>현재 색상: {st.session_state.current_color}</b></center>", unsafe_allow_html=True)
+    st.markdown(f"<center><b>현재 색상: <span style='color:{get_color_code(st.session_state.current_color)}'>{st.session_state.current_color}</span></b></center>", unsafe_allow_html=True)
     st.markdown(render_card_html(st.session_state.discard[-1]), unsafe_allow_html=True)
     s_val = st.session_state.get('stack', 0)
     if s_val > 0: st.error(f"공격 누적: +{s_val}")
 
-# (3) 봇 우노 타이머 체크
+# 봇 우노 타이머 체크
 u_timer = st.session_state.get('uno_timer')
 if u_timer and time.time() > u_timer:
     call_uno(random.choice([1, 2, 3]))
@@ -195,17 +193,19 @@ if u_timer and time.time() > u_timer:
 
 st.divider()
 
-# (4) 내 핸드 처리 & 버튼 배치
-curr_p = st.session_state.players[st.session_state.turn]
-
+# (3) 플레이어 조작 영역
 if st.session_state.get('waiting_color'):
-    st.info("색상을 선택하세요!")
+    st.markdown("<h3 style='text-align: center;'>변경할 색상을 선택하세요!</h3>", unsafe_allow_html=True)
     c_cols = st.columns(4)
-    for i, c in enumerate(["Red", "Yellow", "Green", "Blue"]):
-        if c_cols[i].button(c):
-            play_action(0, st.session_state.wild_idx, c)
-            st.session_state.waiting_color = False
-            st.rerun()
+    colors_list = ["Red", "Yellow", "Green", "Blue"]
+    for i, c in enumerate(colors_list):
+        with c_cols[i]:
+            # 카드 모양의 색상 선택 버튼
+            st.markdown(f"""<div class="color-selector-card" style="background-color: {get_color_code(c)};"></div>""", unsafe_allow_html=True)
+            if st.button(f"{c} 선택", key=f"sel_{c}", use_container_width=True):
+                play_action(0, st.session_state.wild_idx, c)
+                st.session_state.waiting_color = False
+                st.rerun()
 
 elif not curr_p["bot"]:
     top = st.session_state.discard[-1]
@@ -217,19 +217,21 @@ elif not curr_p["bot"]:
         elif c.color == "Wild" or c.color == st.session_state.current_color or c.value == top.value:
             playable.append(i)
 
-    # [자동 카드 가져오기] 낼 카드가 없으면 즉시 실행
+    # 자동 드로우
     if not playable:
         st.warning("낼 카드가 없어서 카드를 가져옵니다...")
         time.sleep(1)
-        if s > 0: handle_penalty(0)
+        if s > 0:
+            p = st.session_state.players[0]
+            for _ in range(s):
+                if st.session_state.deck: p["hand"].append(st.session_state.deck.pop())
+            st.session_state.stack = 0
+            next_p()
         else:
-            if st.session_state.deck:
-                st.session_state.players[0]["hand"].append(st.session_state.deck.pop())
-            st.session_state.game_msg = "🃏 낼 카드가 없어 카드 1장을 가져왔습니다."
+            if st.session_state.deck: st.session_state.players[0]["hand"].append(st.session_state.deck.pop())
             next_p()
         st.rerun()
 
-    # 내 카드들 표시
     st.write("### 🎴 나의 카드")
     hand_cols = st.columns(max(len(curr_p["hand"]), 1))
     for i, c in enumerate(curr_p["hand"]):
@@ -242,16 +244,19 @@ elif not curr_p["bot"]:
                 st.rerun()
     
     st.write("")
-    # 버튼 영역: 카드 가져오기 버튼 아래에 우노 버튼 배치
     _, btn_col, _ = st.columns([1, 0.6, 1])
     with btn_col:
         if st.button("🃏 카드 가져오기", key="draw_btn", use_container_width=True):
-            if s > 0: handle_penalty(0)
+            if s > 0:
+                p = st.session_state.players[0]
+                for _ in range(s):
+                    if st.session_state.deck: p["hand"].append(st.session_state.deck.pop())
+                st.session_state.stack = 0
+                next_p()
             else:
                 if st.session_state.deck: st.session_state.players[0]["hand"].append(st.session_state.deck.pop())
                 next_p()
             st.rerun()
-        
         if st.button("📢 우노!!! (F)", type="primary", key="uno_btn", use_container_width=True):
             call_uno(0)
             st.rerun()
@@ -259,7 +264,7 @@ elif not curr_p["bot"]:
 else:
     # 봇 턴
     st.info(f"🤖 {curr_p['name']}가 생각 중...")
-    time.sleep(1.2)
+    time.sleep(1.5)
     top = st.session_state.discard[-1]
     s = st.session_state.get('stack', 0)
     playable = [i for i, c in enumerate(curr_p["hand"]) if (s > 0 and c.value == top.value) or (s == 0 and (c.color == "Wild" or c.color == st.session_state.current_color or c.value == top.value))]
@@ -271,10 +276,14 @@ else:
             play_action(st.session_state.turn, idx, random.choice(["Red", "Yellow", "Green", "Blue"]))
         else: play_action(st.session_state.turn, idx)
     else:
-        if s > 0: handle_penalty(st.session_state.turn)
+        p = st.session_state.players[st.session_state.turn]
+        if s > 0:
+            for _ in range(s):
+                if st.session_state.deck: p["hand"].append(st.session_state.deck.pop())
+            st.session_state.stack = 0
+            next_p()
         else:
-            if st.session_state.deck: curr_p["hand"].append(st.session_state.deck.pop())
-            st.session_state.game_msg = f"🃏 {curr_p['name']}님이 카드를 가져갔습니다."
+            if st.session_state.deck: p["hand"].append(st.session_state.deck.pop())
             next_p()
     st.rerun()
 
