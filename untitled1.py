@@ -254,3 +254,4 @@ else:
         st.session_state.game_msg = f"🃏 {curr_p['name']}님이 카드를 가져갔습니다."
         next_p()
     st.rerun()
+
