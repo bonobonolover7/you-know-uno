@@ -1,145 +1,3 @@
-import streamlit as st
-import random
-import time
-
-st.set_page_config(layout="wide", page_title="우노 스피드 배틀")
-
-# ---------------- 1. 스타일 & 단축키 (F키) ----------------
-st.markdown("""
-<style>
-    .stApp { background-color: #F9F9F9; }
-    .card-ui {
-        width: 100px; height: 150px; border-radius: 12px;
-        display: flex; flex-direction: column; justify-content: center; align-items: center;
-        color: white; font-weight: bold; box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-        border: 3px solid white; text-align: center; margin: auto;
-    }
-    .card-value { font-size: 24px; }
-    .card-type { font-size: 10px; opacity: 0.9; margin-bottom: 5px; }
-    .wild-bg {
-        background: linear-gradient(45deg, #FF4B4B 25%, #F4C542 25%, #F4C542 50%, #4CAF50 50%, #4CAF50 75%, #2196F3 75%) !important;
-    }
-    .color-card-btn {
-        height: 100px; border-radius: 10px; border: 3px solid white;
-        box-shadow: 0 4px 8px rgba(0,0,0,0.2); cursor: pointer;
-    }
-    div.stButton > button[kind="primary"] {
-        background-color: #FF0000 !important; color: white !important;
-        width: 100%; height: 70px; border-radius: 15px; font-size: 22px !important;
-        font-weight: bold; border: 4px solid white; box-shadow: 0 4px 10px rgba(0,0,0,0.3);
-    }
-    .game-log {
-        background-color: #ffffff; padding: 15px; border-radius: 10px;
-        border-left: 10px solid #FF4B4B; margin-bottom: 20px;
-        font-size: 20px; font-weight: bold; text-align: center;
-    }
-    .turn-msg { color: #FF4B4B; font-size: 22px; margin-top: 5px; }
-</style>
-<script>
-const doc = window.parent.document;
-doc.addEventListener('keydown', function(e) {
-    if (e.key.toLowerCase() === 'f') {
-        const buttons = doc.querySelectorAll('button');
-        for (let btn of buttons) {
-            if (btn.innerText.includes('우노')) {
-                btn.click();
-                break;
-            }
-        }
-    }
-});
-</script>
-""", unsafe_allow_html=True)
-
-class Card:
-    def __init__(self, color, value):
-        self.color = color
-        self.value = value
-
-# ---------------- 2. 유틸리티 ----------------
-def get_color_code(color):
-    return {"Red": "#FF4B4B", "Yellow": "#F4C542", "Green": "#4CAF50", "Blue": "#2196F3", "Wild": "#333333"}.get(color, "#333333")
-
-def render_card_html(card):
-    bg = get_color_code(card.color)
-    is_wild = (card.color == "Wild")
-    class_name = "card-ui wild-bg" if is_wild else "card-ui"
-    style = f"background: {bg};" if not is_wild else ""
-    val_map = {"Wild": "🌈", "Wild Draw Four": "+4", "Draw Two": "+2", "Reverse": "🔄", "Skip": "🚫"}
-    display_val = val_map.get(card.value, card.value)
-    return f"""<div class="{class_name}" style="{style}"><div class="card-type">{card.color.upper()}</div><div class="card-value">{display_val}</div></div>"""
-
-def next_p():
-    st.session_state.turn = (st.session_state.turn + st.session_state.direction) % 4
-    for p in st.session_state.players:
-        if len(p["hand"]) != 1: p["uno_called"] = False
-
-# ---------------- 3. 게임 초기화 ----------------
-if 'initialized' not in st.session_state:
-    colors = ['Red', 'Yellow', 'Green', 'Blue']
-    values = [str(i) for i in range(10)] + ['Skip', 'Reverse', 'Draw Two']
-    deck = [Card(c, v) for c in colors for v in values] * 2
-    for _ in range(4):
-        deck.append(Card('Wild', 'Wild'))
-        deck.append(Card('Wild', 'Wild Draw Four'))
-    random.shuffle(deck)
-
-    players = [
-        {"name": "나", "hand": [], "bot": False, "uno_called": False},
-        {"name": "봇 1", "hand": [], "bot": True, "uno_called": False},
-        {"name": "봇 2", "hand": [], "bot": True, "uno_called": False},
-        {"name": "봇 3", "hand": [], "bot": True, "uno_called": False}
-    ]
-    for p in players:
-        p["hand"] = [deck.pop() for _ in range(7)]
-
-    first = deck.pop()
-    while first.color == "Wild":
-        deck.insert(0, first)
-        random.shuffle(deck)
-        first = deck.pop()
-
-    st.session_state.update({
-        "deck": deck, "players": players, "discard": [first],
-        "current_color": first.color, "turn": 0, "direction": 1,
-        "stack": 0, "game_msg": "🎮 우노 배틀 시작!", "initialized": True,
-        "waiting_color": False, "wild_idx": -1, "uno_timer": None, "uno_target": None
-    })
-
-# ---------------- 4. 액션 로직 ----------------
-def call_uno(caller_idx):
-    target_idx = st.session_state.get('uno_target')
-    if target_idx is not None:
-        target = st.session_state.players[target_idx]
-        caller = st.session_state.players[caller_idx]
-        if caller_idx == target_idx:
-            target["uno_called"] = True
-            st.session_state.game_msg = f"✨ {caller['name']}: '우노!!!' (세이프)"
-        else:
-            if st.session_state.deck: target["hand"].append(st.session_state.deck.pop())
-            st.session_state.game_msg = f"🔔 {caller['name']}님이 가로채기! {target['name']}님 1장 추가!"
-        st.session_state.uno_target = None
-        st.session_state.uno_timer = None
-
-def play_action(p_idx, c_idx, chosen_color=None):
-    p = st.session_state.players[p_idx]
-    card = p["hand"].pop(c_idx)
-    st.session_state.discard.append(card)
-    st.session_state.current_color = chosen_color if card.color == "Wild" else card.color
-
-    if len(p["hand"]) == 1:
-        st.session_state.uno_target = p_idx
-        st.session_state.uno_timer = time.time() + random.uniform(0.3, 0.6)
-    
-    msg = f"📢 {p['name']}님이 {card.value} 카드를 냈습니다."
-    if card.value == "Draw Two": st.session_state.stack += 2
-    elif card.value == "Wild Draw Four": st.session_state.stack += 4
-    if card.value == "Skip": next_p()
-    elif card.value == "Reverse": st.session_state.direction *= -1
-    
-    st.session_state.game_msg = msg
-    next_p()
-
 # ---------------- 5. 메인 UI ----------------
 st.markdown("<h1 style='text-align: center;'>우노 스피드 배틀</h1>", unsafe_allow_html=True)
 
@@ -170,6 +28,11 @@ with center_col:
 
 st.divider()
 
+# ---------------- [핵심: 내 카드 표시 로직] ----------------
+me = st.session_state.players[0]
+st.write(f"### 🎴 나의 카드 (남은 수: {len(me['hand'])}장)")
+
+# 내 카드는 봇 턴일 때도 "항상" 먼저 그려지도록 조건문 밖으로 배치
 # ---------------- [수정된 내 카드 표시 섹션] ----------------
 me = st.session_state.players[0]
 st.write(f"### 🎴 나의 카드 (남은 수: {len(me['hand'])}장)")
