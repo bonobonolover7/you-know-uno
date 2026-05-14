@@ -206,3 +206,22 @@ if num_cards > 0:
                     st.rerun()
 else:
     st.write("낼 카드가 없습니다!")
+
+# ---------------- 봇 실행 로직 (이 부분이 있어야 게임이 돌아갑니다) ----------------
+if not is_my_turn:
+    time.sleep(1.0) # 봇 생각하는 시간
+    bot_playable = [i for i, c in enumerate(curr_p["hand"]) if (s > 0 and c.value == top.value) or (s == 0 and (c.color == "Wild" or c.color == st.session_state.current_color or c.value == top.value))]
+    
+    if bot_playable:
+        idx = bot_playable[0]
+        c = curr_p["hand"][idx]
+        play_action(curr_idx, idx, random.choice(["Red", "Yellow", "Green", "Blue"]) if c.color == "Wild" else None)
+    else:
+        # 낼 카드 없으면 드로우
+        for _ in range(max(s, 1)):
+            if st.session_state.deck: curr_p["hand"].append(st.session_state.deck.pop())
+        st.session_state.stack = 0
+        st.session_state.game_msg = f"🃏 {curr_p['name']}님이 드로우했습니다."
+        next_p()
+    
+    st.rerun() # 중요: 봇이 행동한 뒤 화면을 갱신해야 내 턴으로 넘어옵니다.
