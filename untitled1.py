@@ -2,7 +2,7 @@ import streamlit as st
 import random
 import time
 
-st.set_page_config(layout="wide", page_title="우노 스피드 배틀")
+st.set_page_config(layout="wide", page_title="우노!")
 
 # ---------------- 1. 스타일 & 단축키 (F키) ----------------
 st.markdown("""
