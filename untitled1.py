@@ -171,32 +171,24 @@ if u_timer and time.time() > u_timer:
 
 st.divider()
 
-# ---------------- 6. 플레이어 컨트롤 (수정됨) ----------------
+# ---------------- 6. 플레이어 컨트롤 ----------------
 me = st.session_state.players[0]
 is_my_turn = (curr_idx == 0)
 
-# ---------------- [수정된 내 카드 표시 섹션] ----------------
-me = st.session_state.players[0]
 st.write(f"### 🎴 나의 카드 (남은 수: {len(me['hand'])}장)")
 
-# 카드가 밑으로 툭 떨어지는 현상을 방지하기 위해 
-# columns 생성 시 너비를 균등하게 배분합니다.
 num_cards = len(me["hand"])
+top = st.session_state.discard[-1]
+s = st.session_state.stack
+
+# 내 카드 출력 및 내기 로직
 if num_cards > 0:
-    hand_cols = st.columns(num_cards) # 카드 개수만큼 정확히 칸 생성
-    
-    top = st.session_state.discard[-1]
-    s = st.session_state.stack
-    
-    # 내 턴일 때 낼 수 있는 카드 계산
+    hand_cols = st.columns(num_cards) 
     playable = [i for i, c in enumerate(me["hand"]) if (s > 0 and c.value == top.value) or (s == 0 and (c.color == "Wild" or c.color == st.session_state.current_color or c.value == top.value))]
 
     for i, c in enumerate(me["hand"]):
         with hand_cols[i]:
-            # 카드 이미지 출력
             st.markdown(render_card_html(c), unsafe_allow_html=True)
-            
-            # 버튼이 카드 바로 밑에 고정되도록 함
             if is_my_turn and not st.session_state.waiting_color:
                 if st.button("내기", key=f"p_{i}", disabled=(i not in playable), use_container_width=True):
                     if c.color == "Wild":
@@ -207,37 +199,47 @@ if num_cards > 0:
 else:
     st.write("낼 카드가 없습니다!")
 
-# ---------------- 7. 봇 로직 (3초 대기 및 버그 수정) ----------------
+# 와일드 카드 색상 선택 창
+if st.session_state.waiting_color:
+    st.divider()
+    st.markdown("<center>🌈 바꿀 색상을 선택하세요!</center>", unsafe_allow_html=True)
+    c_cols = st.columns(4)
+    for i, c_name in enumerate(["Red", "Yellow", "Green", "Blue"]):
+        if c_cols[i].button(c_name, use_container_width=True):
+            play_action(0, st.session_state.wild_idx, c_name)
+            st.session_state.waiting_color = False
+            st.rerun()
+
+# 카드 가져오기 버튼 (내 턴일 때만 표시)
+elif is_my_turn:
+    if st.button("🃏 카드 가져오기 / 넘기기", use_container_width=True):
+        for _ in range(max(s, 1)):
+            if st.session_state.deck:
+                me["hand"].append(st.session_state.deck.pop())
+        st.session_state.stack = 0
+        next_p()
+        st.rerun()
+
+# ---------------- 7. 봇 로직 (3초 대기) ----------------
 else:
-    # 봇이 행동하기 전에 3초간 멈춥니다.
     time.sleep(3.0) 
     
-    # 현재 바닥에 놓인 카드 정보와 공격 스택 확인
-    top = st.session_state.discard[-1]
-    s = st.session_state.stack
-    
-    # 봇이 낼 수 있는 카드 필터링
     bot_playable = [i for i, c in enumerate(curr_p["hand"]) if (s > 0 and c.value == top.value) or (s == 0 and (c.color == "Wild" or c.color == st.session_state.current_color or c.value == top.value))]
     
     if bot_playable:
-        # 낼 수 있는 카드가 있다면 첫 번째 카드를 냅니다.
         idx = bot_playable[0]
         selected_card = curr_p["hand"][idx]
-        
-        # 와일드 카드라면 무작위 색상 선택, 아니면 None
         chosen_color = random.choice(["Red", "Yellow", "Green", "Blue"]) if selected_card.color == "Wild" else None
         
-        # 카드 내기 실행 (play_card 함수 호출)
-        play_card(curr_idx, idx, chosen_color)
+        # 함수명을 play_action으로 통일했습니다.
+        play_action(curr_idx, idx, chosen_color)
     else:
-        # 낼 카드가 없다면 덱에서 카드를 가져옵니다.
         for _ in range(max(s, 1)):
             if st.session_state.deck:
                 curr_p["hand"].append(st.session_state.deck.pop())
         
-        st.session_state.stack = 0 # 공격 스택 초기화
-        st.session_state.game_msg = f"🃏 {curr_p['name']}님이 카드를 한 장 뽑고 차례를 넘겼습니다."
-        next_p() # 다음 플레이어 차례로 변경
+        st.session_state.stack = 0
+        st.session_state.game_msg = f"🃏 {curr_p['name']}님이 카드를 한 장 뽑았습니다."
+        next_p()
     
-    # 중요: 봇의 행동이 끝나면 즉시 화면을 새로고침하여 내 턴으로 바꿉니다.
     st.rerun()
