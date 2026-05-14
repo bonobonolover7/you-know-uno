@@ -181,8 +181,8 @@ num_cards = len(me["hand"])
 top = st.session_state.discard[-1]
 s = st.session_state.stack
 
-# 내 카드 출력 및 내기 로직
 if num_cards > 0:
+    # 카드 밀림 방지를 위해 정확한 개수의 컬럼 생성
     hand_cols = st.columns(num_cards) 
     playable = [i for i, c in enumerate(me["hand"]) if (s > 0 and c.value == top.value) or (s == 0 and (c.color == "Wild" or c.color == st.session_state.current_color or c.value == top.value))]
 
@@ -195,11 +195,12 @@ if num_cards > 0:
                         st.session_state.waiting_color, st.session_state.wild_idx = True, i
                     else: 
                         play_action(0, i)
-                    st.rerun()
+                    # [핵심] 내가 내자마자 봇의 sleep 이전에 화면을 새로고침하여 카드를 지웁니다.
+                    st.rerun() 
 else:
     st.write("낼 카드가 없습니다!")
 
-# 와일드 카드 색상 선택 창
+# 색상 선택창
 if st.session_state.waiting_color:
     st.divider()
     st.markdown("<center>🌈 바꿀 색상을 선택하세요!</center>", unsafe_allow_html=True)
@@ -210,7 +211,7 @@ if st.session_state.waiting_color:
             st.session_state.waiting_color = False
             st.rerun()
 
-# 카드 가져오기 버튼 (내 턴일 때만 표시)
+# 카드 가져오기
 elif is_my_turn:
     if st.button("🃏 카드 가져오기 / 넘기기", use_container_width=True):
         for _ in range(max(s, 1)):
@@ -220,24 +221,22 @@ elif is_my_turn:
         next_p()
         st.rerun()
 
-# ---------------- 7. 봇 로직 (3초 대기) ----------------
+# ---------------- 7. 봇 로직 (수정됨) ----------------
 else:
+    # 봇 차례가 되면 화면에 "봇 생각 중..."이 먼저 뜨고 3초를 기다립니다.
     time.sleep(3.0) 
     
-    bot_playable = [i for i, c in enumerate(curr_p["hand"]) if (s > 0 and c.value == top.value) or (s == 0 and (c.color == "Wild" or c.color == st.session_state.current_color or c.value == top.value))]
+    bot_playable = [i for i, c in enumerate(curr_p["hand"]) if (s > 0 and c.value == top.value) or (s == 0 and (c.color == "Wild" or c.color == st.session_state.current_color or c.value == top_card.value if 'top_card' in locals() else top.value))]
     
     if bot_playable:
         idx = bot_playable[0]
         selected_card = curr_p["hand"][idx]
         chosen_color = random.choice(["Red", "Yellow", "Green", "Blue"]) if selected_card.color == "Wild" else None
-        
-        # 함수명을 play_action으로 통일했습니다.
         play_action(curr_idx, idx, chosen_color)
     else:
         for _ in range(max(s, 1)):
             if st.session_state.deck:
                 curr_p["hand"].append(st.session_state.deck.pop())
-        
         st.session_state.stack = 0
         st.session_state.game_msg = f"🃏 {curr_p['name']}님이 카드를 한 장 뽑았습니다."
         next_p()
