@@ -207,21 +207,37 @@ if num_cards > 0:
 else:
     st.write("낼 카드가 없습니다!")
 
-# ---------------- 봇 실행 로직 (이 부분이 있어야 게임이 돌아갑니다) ----------------
-if not is_my_turn:
-    time.sleep(1.0) # 봇 생각하는 시간
+# ---------------- 7. 봇 로직 (3초 대기 및 버그 수정) ----------------
+else:
+    # 봇이 행동하기 전에 3초간 멈춥니다.
+    time.sleep(3.0) 
+    
+    # 현재 바닥에 놓인 카드 정보와 공격 스택 확인
+    top = st.session_state.discard[-1]
+    s = st.session_state.stack
+    
+    # 봇이 낼 수 있는 카드 필터링
     bot_playable = [i for i, c in enumerate(curr_p["hand"]) if (s > 0 and c.value == top.value) or (s == 0 and (c.color == "Wild" or c.color == st.session_state.current_color or c.value == top.value))]
     
     if bot_playable:
+        # 낼 수 있는 카드가 있다면 첫 번째 카드를 냅니다.
         idx = bot_playable[0]
-        c = curr_p["hand"][idx]
-        play_action(curr_idx, idx, random.choice(["Red", "Yellow", "Green", "Blue"]) if c.color == "Wild" else None)
+        selected_card = curr_p["hand"][idx]
+        
+        # 와일드 카드라면 무작위 색상 선택, 아니면 None
+        chosen_color = random.choice(["Red", "Yellow", "Green", "Blue"]) if selected_card.color == "Wild" else None
+        
+        # 카드 내기 실행 (play_card 함수 호출)
+        play_card(curr_idx, idx, chosen_color)
     else:
-        # 낼 카드 없으면 드로우
+        # 낼 카드가 없다면 덱에서 카드를 가져옵니다.
         for _ in range(max(s, 1)):
-            if st.session_state.deck: curr_p["hand"].append(st.session_state.deck.pop())
-        st.session_state.stack = 0
-        st.session_state.game_msg = f"🃏 {curr_p['name']}님이 드로우했습니다."
-        next_p()
+            if st.session_state.deck:
+                curr_p["hand"].append(st.session_state.deck.pop())
+        
+        st.session_state.stack = 0 # 공격 스택 초기화
+        st.session_state.game_msg = f"🃏 {curr_p['name']}님이 카드를 한 장 뽑고 차례를 넘겼습니다."
+        next_p() # 다음 플레이어 차례로 변경
     
-    st.rerun() # 중요: 봇이 행동한 뒤 화면을 갱신해야 내 턴으로 넘어옵니다.
+    # 중요: 봇의 행동이 끝나면 즉시 화면을 새로고침하여 내 턴으로 바꿉니다.
+    st.rerun()
